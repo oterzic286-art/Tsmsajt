@@ -11,7 +11,7 @@
     section{margin-top:24px}
     form{margin-top:12px;display:grid;gap:10px;background:#f7f7f7;padding:12px;border-radius:10px}
     input,button,textarea,select{padding:8px;border-radius:8px;border:1px solid #ddd;font-size:14px}
-    .files-list{margin-top:12px;display:grid;gap:12px}
+    .files-list{margin-top:12px;display:grid;gap:12px;min-height:200px;align-content:start}
     .file-card{display:flex;align-items:center;gap:12px;padding:10px;border-radius:10px;border:1px solid #eee}
     .thumb{width:72px;height:72px;object-fit:cover;border-radius:6px;background:#fafafa;display:flex;align-items:center;justify-content:center}
     .meta{flex:1}
@@ -45,7 +45,9 @@
 
 <section>
   <h2>Lista fajlova</h2>
-  <div class="files-list" id="filesList"></div>
+  <div class="files-list" id="filesList">
+    <em>Nema fajlova. Otpremite prvi fajl.</em>
+  </div>
 </section>
 
 <script>
@@ -108,7 +110,10 @@ const filesList = document.getElementById('filesList');
 async function refreshList(){
   const items = await getAllFiles();
   filesList.innerHTML = '';
-  if(items.length===0){ filesList.innerHTML = '<em>Nema fajlova.</em>'; return; }
+  if(items.length===0){ 
+    filesList.innerHTML = '<em>Nema fajlova. Otpremite prvi fajl.</em>'; 
+    return; 
+  }
 
   items.sort((a,b)=>b.created-a.created);
   for(const it of items){
