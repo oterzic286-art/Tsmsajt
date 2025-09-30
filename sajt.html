@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="sr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Školski upload - Matematika</title>
+  <style>
+    body{font-family:Inter, system-ui, Arial; max-width:900px;margin:30px auto;padding:20px}
+    header{display:flex;align-items:center;gap:16px}
+    h1{margin:0}
+    section{margin-top:24px}
+    form{margin-top:12px;display:grid;gap:10px;background:#f7f7f7;padding:12px;border-radius:10px}
+    input,button,textarea,select{padding:8px;border-radius:8px;border:1px solid #ddd;font-size:14px}
+    .files-list{margin-top:12px;display:grid;gap:12px}
+    .file-card{display:flex;align-items:center;gap:12px;padding:10px;border-radius:10px;border:1px solid #eee}
+    .thumb{width:72px;height:72px;object-fit:cover;border-radius:6px;background:#fafafa;display:flex;align-items:center;justify-content:center}
+    .meta{flex:1}
+    .actions{display:flex;gap:6px}
+    small.gray{color:#666}
+  </style>
+</head>
+<body>
+<header>
+  <h1>Školski upload - Matematika</h1>
+  <small class="gray">Otpremi fajlove po kategorijama: teorija, vežbe ili seminarski radovi</small>
+</header>
+
+<section>
+  <h2>Otpremi fajl</h2>
+  <form id="uploadForm">
+    <select id="category" required>
+      <option value="teorija">Teorija</option>
+      <option value="vezbe">Vežbe</option>
+      <option value="seminarski">Seminarski radovi</option>
+    </select>
+    <input type="text" id="title" placeholder="Naslov (npr. Zadatak 1)" required />
+    <input type="file" id="fileInput" required />
+    <textarea id="description" placeholder="Kratak opis (opciono)" rows="2"></textarea>
+    <div style="display:flex;gap:8px">
+      <button type="submit">Otpremi</button>
+      <button type="button" id="clearAll">Obriši sve fajlove</button>
+    </div>
+  </form>
+</section>
+
+<section>
+  <h2>Lista fajlova</h2>
+  <div class="files-list" id="filesList"></div>
+</section>
+
+<script>
+const DB_NAME = 'skolski_upload_db';
+const STORE = 'files';
+let db;
+
+function openDB(){
+  return new Promise((res, rej)=>{
+    const r = indexedDB.open(DB_NAME, 1);
+    r.onupgradeneeded = e => {
+      const d = e.target.result;
+      if(!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE, {keyPath:'id'});
+    };
+    r.onsuccess = e => { db = e.target.result; res(db); };
+    r.onerror = e => rej(e.target.error);
+  });
+}
+
+function putFile(obj){
+  return new Promise((res, rej)=>{
+    const tx = db.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).put(obj);
+    tx.oncomplete = ()=>res();
+    tx.onerror = e=>rej(e.target.error);
+  });
+}
+
+function getAllFiles(){
+  return new Promise((res, rej)=>{
+    const tx = db.transaction(STORE, 'readonly');
+    const store = tx.objectStore(STORE);
+    const req = store.getAll();
+    req.onsuccess = ()=>res(req.result);
+    req.onerror = e=>rej(e.target.error);
+  });
+}
+
+function deleteFile(id){
+  return new Promise((res, rej)=>{
+    const tx = db.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).delete(id);
+    tx.oncomplete = ()=>res();
+    tx.onerror = e=>rej(e.target.error);
+  });
+}
+
+function clearAll(){
+  return new Promise((res, rej)=>{
+    const tx = db.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).clear();
+    tx.oncomplete = ()=>res();
+    tx.onerror = e=>rej(e.target.error);
+  });
+}
+
+const form = document.getElementById('uploadForm');
+const filesList = document.getElementById('filesList');
+
+async function refreshList(){
+  const items = await getAllFiles();
+  filesList.innerHTML = '';
+  if(items.length===0){ filesList.innerHTML = '<em>Nema fajlova.</em>'; return; }
+
+  items.sort((a,b)=>b.created-a.created);
+  for(const it of items){
+    const card = document.createElement('div'); card.className='file-card';
+    const thumb = document.createElement('div'); thumb.className='thumb';
+
+    if(it.type && it.type.startsWith('image/')){
+      const img = document.createElement('img');
+      img.src = URL.createObjectURL(it.blob);
+      img.onload = ()=>URL.revokeObjectURL(img.src);
+      img.style.width='100%'; img.style.height='100%'; img.style.objectFit='cover';
+      thumb.appendChild(img);
+    } else {
+      thumb.textContent = it.name.split('.').pop().toUpperCase();
+    }
+
+    const meta = document.createElement('div'); meta.className='meta';
+    meta.innerHTML = `<strong>${escapeHtml(it.title)} (${escapeHtml(it.category)})</strong><br><small class="gray">${escapeHtml(it.name)} • ${new Date(it.created).toLocaleString()}</small><div>${escapeHtml(it.description||'')}</div>`;
+
+    const actions = document.createElement('div'); actions.className='actions';
+    const dl = document.createElement('a');
+    dl.href = URL.createObjectURL(it.blob);
+    dl.download = it.name;
+    dl.textContent = 'Preuzmi';
+    dl.onclick = ()=>setTimeout(()=>URL.revokeObjectURL(dl.href), 1000);
+
+    const del = document.createElement('button'); del.textContent='Obriši';
+    del.onclick = async ()=>{ if(confirm('Da li zaista želite da obrišete ovaj fajl?')){ await deleteFile(it.id); refreshList(); }};
+
+    actions.appendChild(dl); actions.appendChild(del);
+    card.appendChild(thumb); card.appendChild(meta); card.appendChild(actions);
+    filesList.appendChild(card);
+  }
+}
+
+form.addEventListener('submit', async e=>{
+  e.preventDefault();
+  const title = document.getElementById('title').value.trim();
+  const desc = document.getElementById('description').value.trim();
+  const category = document.getElementById('category').value;
+  const fileInput = document.getElementById('fileInput');
+  if(fileInput.files.length===0) return alert('Izaberi fajl');
+  const f = fileInput.files[0];
+
+  const obj = {
+    id: crypto.randomUUID(),
+    title,
+    name: f.name,
+    type: f.type,
+    category,
+    description: desc,
+    created: Date.now(),
+    blob: f
+  };
+  await putFile(obj);
+  form.reset();
+  refreshList();
+});
+
+document.getElementById('clearAll').addEventListener('click', async ()=>{
+  if(confirm('Obriši SVE fajlove iz lokalne baze?')){ await clearAll(); refreshList(); }
+});
+
+function escapeHtml(s){ if(!s) return ''; return s.replace(/[&<>"']/g, c=>({
+  '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[c])); }
+
+openDB().then(refreshList).catch(err=>{
+  console.error(err);
+  alert('Greška pri otvaranju lokalne baze: '+err);
+});
+</script>
+</body>
+</html>
